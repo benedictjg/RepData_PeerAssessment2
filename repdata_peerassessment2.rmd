@@ -1,0 +1,185 @@
+---
+title: "Repdata_PA2"
+author: "benedictjg"
+date: "05/24/2014"
+output:
+  html_document:
+    knitr:
+      opts_chunk:
+        echo: yes
+      opts_knitr:
+        verbose: yes
+---
+
+## Reproducible Research Peer Assessment 2
+
+###Settings
+```{r environ, cache=TRUE, echo=TRUE}
+environ <- sessionInfo()
+library(R.utils)
+library(plyr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+###Data Processing
+Downloading the file
+```{r processing, cache=TRUE}
+wd <- getwd()
+if(!"stormdata.csv" %in% dir(wd)){
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = "stormdata.csv.bz2", method = "curl")
+    bunzip2("stormdata.csv.bz2")
+}
+```
+
+Reading in the csv file
+```{r read, cache=TRUE}
+stormdata <- read.csv("stormdata.csv", sep=",")
+```
+
+Extracting needed columns and changing date format
+```{r select, cache=TRUE, eval = TRUE}
+stormdata <- select(stormdata,BGN_DATE,EVTYPE,FATALITIES, INJURIES, PROPDMG, PROPDMGEXP,CROPDMG,CROPDMGEXP)
+stormdata$BGN_DATE <- mdy_hms(stormdata$BGN_DATE)
+stormdata <- mutate(stormdata,year=year(stormdata$BGN_DATE))
+```
+
+Initial look at the data as frequency of reports
+```{r histogram, cache=TRUE, eval=TRUE}
+hist(stormdata$year)
+```
+
+As we can see, there is a substantial difference in data collection starting in 1995, so we will subset our data to only include years greater than or equal to 1995
+```{r subyear, cache=TRUE, eval=TRUE}
+data <- subset(stormdata, stormdata$year >= 1995)
+```
+
+Now we'll change the PROPDMGEXP and CROPDMGEXP to numerical values based on the values in the [Storm Data Documentation]("https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf")
+```{r factorizing, cache=TRUE, eval=TRUE}
+data$PROPDMGEXP <- as.character(data$PROPDMGEXP)
+data[which(data$PROPDMGEXP=="+"),6] <- 0
+data[which(data$PROPDMGEXP=="-"),6] <- 0
+data[which(data$PROPDMGEXP=="?"),6] <- 0
+data[which(data$PROPDMGEXP==""),6] <- 1
+data[which(data$PROPDMGEXP=="0"),6] <- 1
+data[which(data$PROPDMGEXP=="1"),6] <- 10
+data[which(data$PROPDMGEXP=="H"),6] <- 100
+data[which(data$PROPDMGEXP=="2"),6] <- 100
+data[which(data$PROPDMGEXP=="h"),6] <- 100
+data[which(data$PROPDMGEXP=="K"),6] <- 1000
+data[which(data$PROPDMGEXP=="3"),6] <- 1000
+data[which(data$PROPDMGEXP=="4"),6] <- 10000
+data[which(data$PROPDMGEXP=="5"),6] <- 100000
+data[which(data$PROPDMGEXP=="M"),6] <- 1000000
+data[which(data$PROPDMGEXP=="m"),6] <- 1000000
+data[which(data$PROPDMGEXP=="6"),6] <- 1000000
+data[which(data$PROPDMGEXP=="7"),6] <- 10000000
+data[which(data$PROPDMGEXP=="8"),6] <- 100000000
+data[which(data$PROPDMGEXP=="B"),6] <- 10000000000
+data$PROPDMGEXP <- as.numeric(data$PROPDMGEXP)
+
+data$CROPDMGEXP <- as.character(data$CROPDMGEXP)
+data[which(data$CROPDMGEXP=="?"),8] <- 0
+data[which(data$CROPDMGEXP==""),8] <- 1
+data[which(data$CROPDMGEXP=="0"),8] <- 1
+data[which(data$CROPDMGEXP=="2"),8] <- 100
+data[which(data$CROPDMGEXP=="k"),8] <- 1000
+data[which(data$CROPDMGEXP=="K"),8] <- 1000
+data[which(data$CROPDMGEXP=="m"),8] <- 1000000
+data[which(data$CROPDMGEXP=="M"),8] <- 1000000
+data[which(data$CROPDMGEXP=="B"),8] <- 1000000000
+data$CROPDMGEXP <- as.numeric(data$CROPDMGEXP)
+```
+
+Finally, lets use the exponential values and the DMG values to get total values for CROP and PROP columns
+```{r totals, eval=TRUE, cache=TRUE}
+data <- mutate(data, CROPTOTAL = CROPDMG*CROPDMGEXP)
+data <- mutate(data, PROPTOTAL = PROPDMG*PROPDMGEXP)
+```
+
+### Results
+
+I'll start by aggregating the EVTYPEs by different outcomes, particularly CROPTOTAL, PROPTOTAL, FATALITIES, and INJURIES.  It's also important to decide on whether to use means or sums when aggregating, since both will tell a unique story.  I'll put the results of the top five entries into 8 new data frames for comparison.
+
+```{r eval = TRUE, cache = TRUE}
+CROPsum <- aggregate(data = data, data$CROPTOTAL~data$EVTYPE, sum)
+CROPmean <- aggregate(data = data, data$CROPTOTAL~data$EVTYPE, mean)
+names(CROPsum) <- c("EVTYPE","CROPsum")
+names(CROPmean) <- c("EVTYPE","CROPmean")
+CROPsum <- arrange(CROPsum, desc(CROPsum))[1:5,]
+CROPmean <- arrange(CROPmean, desc(CROPmean))[1:5,]
+PROPsum <- aggregate(data = data, data$PROPTOTAL~data$EVTYPE, sum)
+PROPmean <- aggregate(data = data, data$PROPTOTAL~data$EVTYPE, mean)
+names(PROPsum) <- c("EVTYPE","PROPsum")
+names(PROPmean) <- c("EVTYPE","PROPmean")
+PROPsum <- arrange(PROPsum, desc(PROPsum))[1:5,]
+PROPmean <- arrange(PROPmean, desc(PROPmean))[1:5,]
+FATsum <- aggregate(data = data, data$FATALITIES~data$EVTYPE, sum)
+FATmean <- aggregate(data = data, data$FATALITIES~data$EVTYPE, mean)
+names(FATsum) <- c("EVTYPE","FATsum")
+names(FATmean) <- c("EVTYPE","FATmean")
+FATsum <- arrange(FATsum, desc(FATsum))[1:5,]
+FATmean <- arrange(FATmean, desc(FATmean))[1:5,]
+INJsum <- aggregate(data = data, data$INJURIES~data$EVTYPE, sum)
+INJmean <- aggregate(data = data, data$INJURIES~data$EVTYPE, mean)
+names(INJsum) <- c("EVTYPE","INJsum")
+names(INJmean) <- c("EVTYPE","INJmean")
+INJsum <- arrange(INJsum, desc(INJsum))[1:5,]
+INJmean <- arrange(INJmean, desc(INJmean))[1:5,]
+```
+
+
+*Crop Damage Data
+```{r cropplot, eval=TRUE, cache=TRUE}
+par(mfrow=c(1,2))
+CROPsum
+CROPmean
+barplot(height = CROPsum$CROPsum, names.arg = CROPsum$EVTYPE, main="CROPsum", horiz=TRUE)
+barplot(height = CROPmean$CROPmean, names.arg = CROPmean$EVTYPE, main="CROPmean", horiz = TRUE)
+```
+
+*Property Damage Data
+```{r propplot, eval=TRUE, cache=TRUE}
+par(mfrow=c(1,2))
+PROPsum
+PROPmean
+barplot(height = PROPsum$PROPsum, names.arg = PROPsum$EVTYPE, main="PROPsum")
+barplot(height = PROPmean$PROPmean, names.arg = PROPmean$EVTYPE, main="PROPmean")
+```
+
+*Fatality Data
+```{r fatplot, eval=TRUE, cache=TRUE}
+par(mfrow=c(1,2))
+FATsum
+FATmean
+```
+
+*Injury Data
+```{r injplot, eval=TRUE, cache=TRUE}
+par(mfrow=c(1,2))
+INJsum
+INJmean
+```
+
+###Conclusions
+
+Crop Damage Conclusions
+<li>Drought has caused the most damage to crops, 1995-2011
+<li>On average, Excessive Wetness causes the most damage to crops per year
+<li>Only Hurricanes/Typhoons made the top 5 of both yearly average and total damage to crops over the period
+
+Property Damage Conclusions
+<li>Flood has caused the most damage to property in total, 1995-2011
+<li>Heavy Rain/Severe Weather has the highest yearly average of property damage
+<li>Hurricane/Typhoon and Storm Surge are both in the top 5 for average yearly damage and total damage 1995-2011
+
+Fatality Conclusions
+<li> Excessive Heat caused the most fatalities 1995-2011
+<li> Cold and Snow cause the most fatalities on average per year
+<li> No two EVTYPEs show up on both lists, but heat related entries show up four times:  "Excessive Heat", "Heat", "Extreme Heat", and "Heat wave drought" 
+
+Injury Conclusions
+<li> Tornado caused the most injuries 1995-2011
+<li> Heat Wave caused the most injuries on average per year, 1995-2011
+<li> No two EVTYPEs show up on both lists, but heat related entries show up three times:  "Excessive Heat", "Heat Wave", and "Heat wave drought" and interestingly Hurricane/Typhoon is number five on the average list
